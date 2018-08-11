@@ -11,7 +11,7 @@ import serial
 # from VideoCapture import Device
 
 
-cap = cv2.VideoCapture(0)   # /dev/video0
+cap = cv2.VideoCapture(1)   # /dev/video0
 cap.set(cv2.CAP_PROP_AUTOFOCUS, 0) # turn the autofocus off
 cap.set(3,720)
 cap.set(4,480)
@@ -62,9 +62,13 @@ def colorDist(A, B, l=3):
   sumError = 0
   for k in range(l):
     sumError = sumError + pow(abs(A[k] - B[k]), 2)
-  
   sumError = math.sqrt(sumError)
   return sumError
+  
+  # dh = min(abs(B[0]-A[0]), 360-abs(B[0]-A[0])) / 180.0
+  # ds = abs(B[1]-A[1])
+  # dv = abs(B[2]-A[2]) / 255.0
+  # return math.sqrt(dh*dh+ds*ds+dv*dv)
 
 def isGray(color):
   avg = (color[0] + color[1] + color[2]) / 3
@@ -79,16 +83,37 @@ def isGray(color):
   return False
 
 colorMap = [
+  # RGB
+    # [27, 55, 35, "green"],
+    # [151, 189, 126, "green"],
+    # [110, 190, 216, "yellow"],
+    # [131, 190, 204, "yellow"],
+    # [41, 140, 179, "yellow"],
+    # [90, 170, 200, "yellow"],
+    [170, 250, 250, "yellow"],
+    [90, 180, 220, "yellow"],
+
+    [163, 118, 133, "purple"],
+    # [39, 53, 143, "red"],
+    [39, 30, 170, "red"],
+    [60, 76, 200, "red"],
+
+    [138, 65, 22, "blue"],
+    [170, 230, 210, "green"],
+    [130, 150, 50, "green"],
+    # [85, 150, 230, "orange"],
+
+  # HSV
   # [27, 55, 35, "green"],
   # [151, 189, 126, "green"],
   # [110, 190, 216, "yellow"],
-  [40, 160, 210, "yellow"],
-  [163, 118, 133, "purple"],
+  # [240, 100, 23, "yellow"],
+  # [210, 50, 40, "green"],
+  # [240, 100, 100, "purple"],
+  # [130, 190, 170, "red"],
   # [39, 53, 143, "red"],
-  [39, 30, 170, "red"],
-  [138, 65, 22, "blue"],
-  [109, 174, 160, "green"],
-  [85, 150, 230, "orange"],
+  # [210, 210, 120, "blue"],
+  # [85, 150, 230, "orange"],
 ]
 
 
@@ -105,7 +130,7 @@ def labelOfColor(color):
       bestError = error
       bestColor = check
 
-  if bestError > 50:
+  if bestError > 70:
     return None
 
   # print("Best color: " + bestColor[3] + " error: "+str(bestError))
@@ -132,13 +157,68 @@ def bestColors(centers):
 # time.sleep(1)
 # EV3.close()
 
+import time
+import EV3BT
+import serial
+millis = lambda: int(round(time.time() * 1000))
+
+
+# Connect
+EV3 = serial.Serial('/dev/cu.WOL-SerialPort')
+
+def redirectEsteira(section, lr):
+  s = EV3BT.encodeMessage(EV3BT.MessageType.Text, section, lr)
+  EV3.write(s)
+
+redirections = []
+def checkAndSendRedirections():
+
+  now = millis()
+  for redirect in redirections:
+    if redirect['at_time'] <= now:
+      print('Sending redirection: ' + redirect['color'] + ' section: ' + redirect['section'] + ' lr: '+redirect['lr'])
+      redirectEsteira(redirect['section'], redirect['lr'])
+      redirections.remove(redirect)
+
+def scheduleColorRedirection(color):
+  data = {}
+  lr = None
+  delta = 0
+  section = None
+  if color == 'red':
+    lr = 'left'
+    section = 'ab'
+
+  if color == 'green':
+    lr = 'right'
+    section = 'ab'
+
+  if color == 'yellow':
+    lr = 'left'
+    section = 'cd'
+    delta = 900
+
+  if color == 'blue':
+    lr = 'right'
+    section = 'cd'
+    delta = 900
+
+  if lr is None:
+    return
+
+  data['lr'] = lr
+  data['color'] =  color
+  data['at_time'] =  millis() + delta
+  data['section'] =  section
+  redirections.append(data)
+
 lastColor = None
 lastColorCounter = 0
 
 while True:
   ret, frame = cap.read()
 
-  # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+  # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
   crop = cropped(frame)
   resized = resize(crop)
   # thresh = treshed(crop)
@@ -171,13 +251,16 @@ while True:
       lastColorCounter = 0
       lastColor = color
 
+    cv2.imshow('kmeans', image)
     if lastColorCounter == 2:
-      cv2.imshow('kmeans', image)
       print("\n\nColor detected: " + color)
+      scheduleColorRedirection(color)
   else:
     lastColor = None
     lastColorCounter = 0
     # print("No color!")
+
+  checkAndSendRedirections()
 
   # Check for user keys input
   key = cv2.waitKey(1) & 0xFF

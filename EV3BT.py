@@ -3,7 +3,10 @@ import struct
 import enum
         
 def printMessage(s):
-    return ' '.join("{:02x}".format(c) for c in s)
+    bytesString = map('{:02x}'.format, s)
+    strs = ' '.join(bytesString).upper()
+    return strs
+    # return ' '.join("{:02x}".format(c) for c in s)
 
 class MessageType(enum.Enum):
     Text = 0
